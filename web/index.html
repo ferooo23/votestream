@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Vote Stream</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script defer type="module">
+        const $ = sel => document.querySelector(sel);
+        const api = (url, m="GET", body) =>
+            fetch(url, {method:m, headers:{'Content-Type':'application/json'},
+                                    body: body && JSON.stringify(body)}).then(r=>r.json());
+
+        async function loadPolls() {
+            const polls = await api('/polls');
+            $('#list').innerHTML = polls.length ? polls.map(p=>`
+                <div class="poll-card" data-id="${p.id}">
+                    <h3>${p.question}</h3>
+                    <button class="vote-btn" data-id="${p.id}">Votar <i class="fas fa-vote-yea"></i></button>
+                </div>
+            `).join('') : '<div class="empty-state">No hay encuestas disponibles</div>';
+        }
+
+        $('#new').onsubmit = async e => {
+            e.preventDefault();
+            const q = $('#q').value.trim();
+            const a = $('#a').value.trim();
+            const b = $('#b').value.trim();
+            if(!q||!a||!b) return;
+            
+            const submitBtn = $('#submit-btn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creando...';
+            
+            await api('/polls','POST',{question:q,options:[{text:a},{text:b}]});
+            e.target.reset(); 
+            loadPolls();
+            
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = 'Crear';
+            
+            showToast('¡Encuesta creada con éxito!');
+        };
+
+        $('#list').onclick = async e => {
+            const pollCard = e.target.closest('[data-id]');
+            if(!pollCard) return;
+            
+            const id = pollCard.dataset.id;
+            const poll = await api(`/polls/${id}`);
+            $('#vote').hidden = false;
+            $('#vote').scrollIntoView({behavior: 'smooth'});
+            
+            $('#question').textContent = poll.question;
+            ['opt0','opt1'].forEach((idb,i)=>{
+                $('#'+idb).textContent = poll.options[i].text;
+                $('#'+idb).onclick = async () => {
+                    const btn = $('#'+idb);
+                    btn.classList.add('voted');
+                    await api(`/polls/${poll.id}/vote`,'POST',{choice:i});
+                    showToast('¡Voto registrado!');
+                };
+            });
+            
+            const ws = new WebSocket(`ws://${location.host}/polls/${poll.id}/stream`);
+            ws.onmessage = m => {
+                const resultsElem = $('#results');
+                resultsElem.textContent = m.data;
+                resultsElem.classList.add('results-updated');
+                setTimeout(() => resultsElem.classList.remove('results-updated'), 300);
+            };
+        };
+        
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => {
+                toast.classList.add('show');
+                setTimeout(() => {
+                    toast.classList.remove('show');
+                    setTimeout(() => toast.remove(), 300);
+                }, 2000);
+            }, 100);
+        }
+
+        loadPolls();
+    </script>
+    <style>
+        :root {
+            --primary: #4361ee;
+            --primary-dark: #3a56d4;
+            --secondary: #3f37c9;
+            --accent: #4cc9f0;
+            --light: #f8f9fa;
+            --dark: #212529;
+            --success: #4ade80;
+            --danger: #f43f5e;
+            --warning: #fbbf24;
+            --gray: #6c757d;
+            --border-radius: 8px;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            --transition: all 0.3s ease;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: var(--dark);
+            background-color: #f5f7fa;
+            margin: 0;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        h1 {
+            color: var(--primary);
+            text-align: center;
+            margin: 1.5rem 0;
+            font-size: 2.5rem;
+            font-weight: 700;
+            position: relative;
+            padding-bottom: 10px;
+        }
+        
+        h1::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100px;
+            height: 4px;
+            background: linear-gradient(to right, var(--primary), var(--accent));
+            border-radius: 2px;
+        }
+        
+        h2 {
+            color: var(--secondary);
+            margin: 2rem 0 1rem;
+            font-weight: 600;
+            border-left: 4px solid var(--primary);
+            padding-left: 10px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        form {
+            display: grid;
+            grid-gap: 1rem;
+        }
+        
+        label {
+            font-weight: 500;
+            margin-bottom: 0.25rem;
+            display: block;
+        }
+        
+        input, button {
+            border-radius: var(--border-radius);
+            border: 1px solid #ddd;
+            padding: 0.75rem 1rem;
+            font-size: 1rem;
+            font-family: inherit;
+            transition: var(--transition);
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.3);
+        }
+        
+        button {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        button:hover {
+            background-color: var(--primary-dark);
+            transform: translateY(-2px);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .poll-card {
+            background: white;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            padding: 1.2rem;
+            margin-bottom: 1rem;
+            transition: var(--transition);
+            border-left: 4px solid var(--primary);
+        }
+        
+        .poll-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+        
+        .poll-card h3 {
+            margin-bottom: 0.75rem;
+        }
+        
+        .vote-btn {
+            background-color: var(--accent);
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+        }
+        
+        .vote-btn:hover {
+            background-color: var(--primary);
+        }
+        
+        .vote-btn i {
+            margin-left: 6px;
+        }
+        
+        #vote {
+            background: white;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            padding: 1.5rem;
+            margin-top: 2rem;
+            border-top: 4px solid var(--accent);
+            animation: fadeIn 0.5s ease;
+        }
+        
+        #question {
+            margin-bottom: 1rem;
+            color: var(--dark);
+        }
+        
+        #opt0, #opt1 {
+            margin-right: 1rem;
+            margin-bottom: 1rem;
+            padding: 0.75rem 1.5rem;
+            min-width: 150px;
+            transition: all 0.2s ease;
+        }
+        
+        #opt0 {
+            background-color: #8338ec;
+        }
+        
+        #opt1 {
+            background-color: #ff006e;
+        }
+        
+        #opt0:hover, #opt1:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        .voted {
+            background-color: var(--success) !important;
+        }
+        
+        #results {
+            background-color: var(--light);
+            padding: 1rem;
+            border-radius: var(--border-radius);
+            margin-top: 1rem;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 1.1rem;
+            transition: var(--transition);
+            border: 1px solid #ddd;
+        }
+        
+        .results-updated {
+            background-color: #e6f7ff !important;
+            box-shadow: 0 0 0 3px rgba(76, 201, 240, 0.3);
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 2rem;
+            color: var(--gray);
+            font-style: italic;
+        }
+        
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: var(--success);
+            color: white;
+            padding: 12px 20px;
+            border-radius: var(--border-radius);
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s ease;
+        }
+        
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @media (max-width: 600px) {
+            body {
+                padding: 10px;
+            }
+            
+            form {
+                grid-template-columns: 1fr;
+            }
+            
+            #opt0, #opt1 {
+                width: 100%;
+                margin-right: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Vote Stream</h1>
+
+        <div class="card">
+            <h2>Crear nueva encuesta</h2>
+            <form id="new">
+                <div>
+                    <label for="q">Pregunta</label>
+                    <input id="q" placeholder="Escribe tu pregunta..." required>
+                </div>
+                <div>
+                    <label for="a">Primera opción</label>
+                    <input id="a" placeholder="Opción A" required>
+                </div>
+                <div>
+                    <label for="b">Segunda opción</label>
+                    <input id="b" placeholder="Opción B" required>
+                </div>
+                <button id="submit-btn" type="submit">Crear</button>
+            </form>
+        </div>
+
+        <h2>Encuestas existentes</h2>
+        <div id="list" class="polls-container">
+            <div class="empty-state">
+                <i class="fas fa-spinner fa-spin"></i> Cargando encuestas...
+            </div>
+        </div>
+
+        <div id="vote" hidden>
+            <h2 id="question"></h2>
+            <div class="options-container">
+                <button id="opt0"></button>
+                <button id="opt1"></button>
+            </div>
+            <pre id="results">Los resultados aparecerán aquí...</pre>
+        </div>
+    </div>
+</body>
+</html></div>
