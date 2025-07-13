@@ -1,10 +1,26 @@
 const $ = sel => document.querySelector(sel);
-const api = (url, m = "GET", body) =>
-    fetch(url, {
-        method: m,
-        headers: { 'Content-Type': 'application/json' },
-        body: body && JSON.stringify(body)
-    }).then(r => r.json());
+const api = async (url, m = "GET", body) => {
+    try {
+        const response = await fetch(url, {
+            method: m,
+            headers: { 'Content-Type': 'application/json' },
+            body: body && JSON.stringify(body)
+        });
+        
+        if (response.status === 429) {
+            throw new Error('Rate limit exceeded');
+        }
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        console.error('API Error:', error);
+        throw error;
+    }
+};
 
 // Global variables for optimization
 let currentWebSocket = null;
@@ -185,9 +201,14 @@ function startPollingResults(pollId) {
                 setTimeout(() => resultsElem.classList.remove('results-updated'), 300);
             }
         } catch (error) {
+            // If rate limited, just skip this poll and try again later
+            if (error.message && error.message.includes('Rate limit')) {
+                console.log('Rate limited, skipping poll cycle');
+                return;
+            }
             console.error('Error polling results:', error);
         }
-    }, 3000);
+    }, 10000); // Increased from 3000ms to 10000ms (10 seconds)
 }
 
 function stopPolling() {

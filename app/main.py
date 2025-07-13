@@ -93,6 +93,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.period = period
 
     async def dispatch(self, request: Request, call_next):
+        # Skip rate limiting for static files and health checks
+        if (request.url.path.startswith("/css/") or 
+            request.url.path.startswith("/js/") or 
+            request.url.path.endswith(".html") or
+            request.url.path in ["/health", "/favicon.ico"]):
+            return await call_next(request)
+            
         # Get client IP
         client_ip = request.client.host
         
@@ -179,8 +186,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add rate limiting
-app.add_middleware(RateLimitMiddleware, calls=100, period=60)
+# Add rate limiting - more generous for normal usage, still protects against abuse
+app.add_middleware(RateLimitMiddleware, calls=200, period=60)
 
 
 def get_session():
